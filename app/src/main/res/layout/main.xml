@@ -1,0 +1,67 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+	android:orientation="vertical"
+    android:padding="16dp"
+    android:gravity="center">
+
+    <TextView
+        android:text="@string/hello_world"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" />
+
+
+    <!-- 配置文本的输入框 -->
+    <EditText
+        android:id="@+id/et_config_text"
+        android:layout_width="match_parent"
+        android:layout_height="200dp"
+        android:layout_marginTop="16dp"
+        android:gravity="start"
+        android:hint="请输入悬浮窗文本（多行）"
+        android:inputType="textMultiLine|textCapSentences"
+        android:scrollbars="vertical" />
+
+    <!-- 保存按钮 -->
+    <Button
+        android:id="@+id/btn_save_config"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="更新文本" />
+
+	<!-- 新增：缩放控制按钮 -->
+	<LinearLayout
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:orientation="horizontal"
+		android:layout_marginTop="16dp">
+
+		<Button
+			android:id="@+id/btn_zoom_out"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:text="缩小 (-)" />
+
+		<!-- 悬浮窗控制按钮 (你已有的代码) -->
+		<Button
+			android:id="@+id/btn_toggle_floating"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:text="显示/隐藏" />
+
+		<Button
+			android:id="@+id/btn_zoom_in"
+			android:layout_width="0dp"
+			android:layout_height="wrap_content"
+			android:layout_weight="1"
+			android:text="放大 (+)" />
+	</LinearLayout>
+	
+	
+
+
+</LinearLayout>
+

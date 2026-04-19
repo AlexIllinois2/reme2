@@ -60,8 +60,22 @@
 			android:text="放大 (+)" />
 	</LinearLayout>
 	
-	
+	<!-- 保活优化按钮 -->
+	<Button
+		android:id="@+id/btn_optimize"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="16dp"
+		android:text="⚡ 保活优化设置"
+		android:backgroundTint="#FF9800" />
 
+	<!-- 停止服务按钮 -->
+	<Button
+		android:id="@+id/btn_stop_service"
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:layout_marginTop="8dp"
+		android:text="⏹ 停止悬浮窗服务"
+		android:backgroundTint="#F44336" />
 
 </LinearLayout>
-

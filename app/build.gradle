@@ -84,6 +84,7 @@ dependencies {
 	// 仅编译 与 gradle一致
 	compileOnly fileTree(dir: 'provider', include: ['.jar'])
 	
-	implementation 'androidx.appcompat:appcompat:1.6.1' 
+	implementation 'androidx.appcompat:appcompat:1.6.1'
+	implementation 'androidx.cardview:cardview:1.0.0'
 	
 }

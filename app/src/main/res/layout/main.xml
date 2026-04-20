@@ -44,14 +44,6 @@
 			android:layout_weight="1"
 			android:text="缩小 (-)" />
 
-		<!-- 悬浮窗控制按钮 (你已有的代码) -->
-		<Button
-			android:id="@+id/btn_toggle_floating"
-			android:layout_width="0dp"
-			android:layout_height="wrap_content"
-			android:layout_weight="1"
-			android:text="显示/隐藏" />
-
 		<Button
 			android:id="@+id/btn_zoom_in"
 			android:layout_width="0dp"
@@ -69,13 +61,44 @@
 		android:text="⚡ 保活优化设置"
 		android:backgroundTint="#FF9800" />
 
-	<!-- 停止服务按钮 -->
+	<!-- 自动隐藏时长控制 -->
+	<LinearLayout
+		android:layout_width="match_parent"
+		android:layout_height="wrap_content"
+		android:orientation="horizontal"
+		android:layout_marginTop="16dp"
+		android:gravity="center_vertical">
+
+		<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:text="自动隐藏时长(分钟):"
+			android:textSize="14sp" />
+
+		<EditText
+			android:id="@+id/et_auto_hide_duration"
+			android:layout_width="80dp"
+			android:layout_height="wrap_content"
+			android:layout_marginStart="8dp"
+			android:inputType="number"
+			android:text="30"
+			android:gravity="center" />
+
+		<Button
+			android:id="@+id/btn_set_auto_hide"
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:layout_marginStart="8dp"
+			android:text="应用" />
+	</LinearLayout>
+
+	<!-- 切换显示/隐藏按钮 -->
 	<Button
-		android:id="@+id/btn_stop_service"
+		android:id="@+id/btn_toggle_visibility"
 		android:layout_width="match_parent"
 		android:layout_height="wrap_content"
 		android:layout_marginTop="8dp"
-		android:text="⏹ 停止悬浮窗服务"
-		android:backgroundTint="#F44336" />
+		android:text="👁 隐藏/显示悬浮窗"
+		android:backgroundTint="#2196F3" />
 
 </LinearLayout>

@@ -3,7 +3,7 @@
 ## 一分钟上手
 
 ### 重新打包
- ./gradlew clean assembleDebug
+ `./gradlew clean assembleDebug`
 
 ### 1️⃣ 编译安装
 ```bash

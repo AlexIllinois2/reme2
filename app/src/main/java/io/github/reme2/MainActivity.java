@@ -24,19 +24,23 @@ public class MainActivity extends AppCompatActivity {
     private static final String PREF_NAME = "floating_window_prefs";
     private static final String KEY_TEXT_CONTENT = "text_content";
     private static final String KEY_ZOOM_SCALE = "zoom_scale";
+    private static final String KEY_AUTO_HIDE_DURATION = "auto_hide_duration"; // 自动隐藏时长(分钟)
+    private static final String KEY_IS_FIRST_LAUNCH = "is_first_launch"; // 是否首次启动
 
     // 默认值
     private static final String DEFAULT_TEXT = "delve\n翻找；\n探索，\n探究";
     private static final float DEFAULT_SCALE = 1.0f;
     private static final float ZOOM_STEP = 0.1f;
+    private static final int DEFAULT_AUTO_HIDE_DURATION = 30; // 默认30分钟
 
     // UI Components
-    private EditText etConfigText;
-    private Button btnSaveConfig, btnStartService, btnStopService, btnZoomIn, btnZoomOut, btnOptimize;
+    private EditText etConfigText, etAutoHideDuration;
+    private Button btnSaveConfig, btnZoomIn, btnZoomOut, btnOptimize, btnToggleVisibility, btnSetAutoHide;
 
     // 状态数据
     private String currentConfigText = DEFAULT_TEXT;
     private float currentScale = DEFAULT_SCALE;
+    private int autoHideDuration = DEFAULT_AUTO_HIDE_DURATION;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -60,7 +64,25 @@ public class MainActivity extends AppCompatActivity {
         SharedPreferences pref = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
         currentConfigText = pref.getString(KEY_TEXT_CONTENT, DEFAULT_TEXT);
         currentScale = pref.getFloat(KEY_ZOOM_SCALE, DEFAULT_SCALE);
-        Log.d(TAG, "Loaded config: scale=" + currentScale);
+        autoHideDuration = pref.getInt(KEY_AUTO_HIDE_DURATION, DEFAULT_AUTO_HIDE_DURATION);
+        
+        // 检查是否是首次启动（通过检查是否有自定义配置）
+        // 如果文本内容与默认值完全相同，且没有其他配置项，则认为是首次启动
+        boolean hasCustomConfig = pref.contains(KEY_ZOOM_SCALE) || 
+                                  pref.contains(KEY_AUTO_HIDE_DURATION) ||
+                                  (pref.contains(KEY_TEXT_CONTENT) && !currentConfigText.equals(DEFAULT_TEXT));
+        
+        if (!hasCustomConfig) {
+            // 首次启动，标记
+            pref.edit().putBoolean(KEY_IS_FIRST_LAUNCH, true).apply();
+            Log.d(TAG, "First launch detected - no custom config");
+        } else {
+            pref.edit().putBoolean(KEY_IS_FIRST_LAUNCH, false).apply();
+            Log.d(TAG, "Not first launch - has custom config");
+        }
+        
+        Log.d(TAG, "Loaded config: text=" + currentConfigText.substring(0, Math.min(20, currentConfigText.length())) 
+                + ", scale=" + currentScale + ", autoHideDuration=" + autoHideDuration);
     }
 
     /**
@@ -69,18 +91,15 @@ public class MainActivity extends AppCompatActivity {
     private void initViews() {
         etConfigText = findViewById(R.id.et_config_text);
         btnSaveConfig = findViewById(R.id.btn_save_config);
-        btnStartService = findViewById(R.id.btn_toggle_floating); // 复用原来的按钮ID
         btnZoomIn = findViewById(R.id.btn_zoom_in);
         btnZoomOut = findViewById(R.id.btn_zoom_out);
         
-        // 添加停止服务按钮(如果布局中存在)
-        try {
-            btnStopService = findViewById(R.id.btn_stop_service);
-        } catch (Exception e) {
-            btnStopService = null;
-        }
+        // 新增的UI控件
+        etAutoHideDuration = findViewById(R.id.et_auto_hide_duration);
+        btnSetAutoHide = findViewById(R.id.btn_set_auto_hide);
+        btnToggleVisibility = findViewById(R.id.btn_toggle_visibility);
         
-        // 添加优化按钮(如果布局中存在)
+        // 优化按钮
         try {
             btnOptimize = findViewById(R.id.btn_optimize);
         } catch (Exception e) {
@@ -90,24 +109,28 @@ public class MainActivity extends AppCompatActivity {
         // 设置初始文本
         etConfigText.setText(currentConfigText);
         
-        // 更新按钮文字
-        updateButtonState();
+        // 设置自动隐藏时长初始值
+        etAutoHideDuration.setText(String.valueOf(autoHideDuration));
     }
 
     /**
      * 绑定所有按钮点击事件
      */
     private void setupEventListeners() {
-        btnStartService.setOnClickListener(v -> toggleService());
-        if (btnStopService != null) {
-            btnStopService.setOnClickListener(v -> stopService());
-        }
         if (btnOptimize != null) {
             btnOptimize.setOnClickListener(v -> showOptimizationGuide());
         }
         btnSaveConfig.setOnClickListener(v -> saveConfigText());
         btnZoomIn.setOnClickListener(v -> zoomIn());
         btnZoomOut.setOnClickListener(v -> zoomOut());
+        
+        // 新增的事件监听
+        if (btnSetAutoHide != null) {
+            btnSetAutoHide.setOnClickListener(v -> setAutoHideDuration());
+        }
+        if (btnToggleVisibility != null) {
+            btnToggleVisibility.setOnClickListener(v -> toggleVisibility());
+        }
     }
     //endregion
 
@@ -140,55 +163,6 @@ public class MainActivity extends AppCompatActivity {
 
     //region 业务逻辑方法
     /**
-     * 启动/停止服务
-     */
-    private void toggleService() {
-        if (isServiceRunning()) {
-            stopService();
-        } else {
-            startService();
-        }
-    }
-
-    /**
-     * 启动悬浮窗服务
-     */
-    private void startService() {
-        // 检查权限
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (!Settings.canDrawOverlays(this)) {
-                Toast.makeText(this, "请先授予悬浮窗权限", Toast.LENGTH_LONG).show();
-                checkOverlayPermission();
-                return;
-            }
-        }
-
-        Intent serviceIntent = new Intent(this, FloatWordService.class);
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            startForegroundService(serviceIntent);
-        } else {
-            startService(serviceIntent);
-        }
-        
-        Toast.makeText(this, "悬浮窗服务已启动", Toast.LENGTH_SHORT).show();
-        updateButtonState();
-        Log.d(TAG, "Service started");
-    }
-
-    /**
-     * 停止悬浮窗服务
-     */
-    private void stopService() {
-        Intent serviceIntent = new Intent(this, FloatWordService.class);
-        stopService(serviceIntent);
-        
-        Toast.makeText(this, "悬浮窗服务已停止", Toast.LENGTH_SHORT).show();
-        updateButtonState();
-        Log.d(TAG, "Service stopped");
-    }
-
-    /**
      * 检查服务是否运行
      */
     private boolean isServiceRunning() {
@@ -203,17 +177,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         return false;
-    }
-
-    /**
-     * 更新按钮状态
-     */
-    private void updateButtonState() {
-        if (isServiceRunning()) {
-            btnStartService.setText("停止悬浮窗");
-        } else {
-            btnStartService.setText("启动悬浮窗");
-        }
     }
 
     /**
@@ -290,6 +253,122 @@ public class MainActivity extends AppCompatActivity {
     }
     
     /**
+     * 设置自动隐藏时长
+     */
+    private void setAutoHideDuration() {
+        try {
+            String durationStr = etAutoHideDuration.getText().toString().trim();
+            if (durationStr.isEmpty()) {
+                Toast.makeText(this, "请输入有效的时长", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            int duration = Integer.parseInt(durationStr);
+            if (duration <= 0) {
+                Toast.makeText(this, "时长必须大于0", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            // 保存配置
+            autoHideDuration = duration;
+            saveData(KEY_AUTO_HIDE_DURATION, duration);
+            
+            // 如果服务正在运行，通知服务更新
+            if (isServiceRunning()) {
+                Intent intent = new Intent(this, FloatWordService.class);
+                intent.putExtra("action", "set_auto_hide_duration");
+                intent.putExtra("duration", duration);
+                startService(intent);
+            }
+            
+            Toast.makeText(this, "已设置自动隐藏时长: " + duration + " 分钟", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "Auto hide duration set to: " + duration + " minutes");
+        } catch (NumberFormatException e) {
+            Toast.makeText(this, "请输入有效的数字", Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "Invalid number format", e);
+        }
+    }
+    
+    /**
+     * 切换悬浮窗显示/隐藏
+     */
+    private void toggleVisibility() {
+        // 如果服务未运行，先启动服务
+        if (!isServiceRunning()) {
+            startFloatingService();
+            Toast.makeText(this, "悬浮窗服务已启动", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // 先检查并保存可能修改的时长
+        checkAndSaveAutoHideDuration();
+        
+        Intent intent = new Intent(this, FloatWordService.class);
+        intent.putExtra("action", "toggle_visibility");
+        startService(intent);
+        
+        Log.d(TAG, "Toggle visibility requested");
+    }
+    
+    /**
+     * 启动悬浮窗服务
+     */
+    private void startFloatingService() {
+        // 检查权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Toast.makeText(this, "请先授予悬浮窗权限", Toast.LENGTH_LONG).show();
+                checkOverlayPermission();
+                return;
+            }
+        }
+
+        Intent serviceIntent = new Intent(this, FloatWordService.class);
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
+        }
+        
+        Log.d(TAG, "Service started");
+    }
+    
+    /**
+     * 检查并保存自动隐藏时长(如果用户修改了但未点击设置)
+     */
+    private void checkAndSaveAutoHideDuration() {
+        try {
+            String durationStr = etAutoHideDuration.getText().toString().trim();
+            if (durationStr.isEmpty()) {
+                return;
+            }
+            
+            int inputDuration = Integer.parseInt(durationStr);
+            if (inputDuration <= 0) {
+                return;
+            }
+            
+            // 如果输入的时长与当前保存的不同,则自动保存
+            if (inputDuration != autoHideDuration) {
+                autoHideDuration = inputDuration;
+                saveData(KEY_AUTO_HIDE_DURATION, inputDuration);
+                
+                // 同时通知服务更新
+                Intent intent = new Intent(this, FloatWordService.class);
+                intent.putExtra("action", "set_auto_hide_duration");
+                intent.putExtra("duration", inputDuration);
+                startService(intent);
+                
+                Log.d(TAG, "Auto-saved auto hide duration: " + inputDuration + " minutes");
+            }
+        } catch (NumberFormatException e) {
+            // 忽略无效输入
+            Log.w(TAG, "Invalid number format in auto-hide duration field");
+        }
+    }
+    
+    /**
      * 显示保活优化引导
      */
     private void showOptimizationGuide() {
@@ -330,7 +409,16 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // 刷新按钮状态
-        updateButtonState();
+        
+        // 应用恢复时，如果不是首次启动且服务未运行，自动启动服务
+        SharedPreferences pref = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
+        boolean isFirstLaunch = pref.getBoolean(KEY_IS_FIRST_LAUNCH, true);
+        
+        if (!isFirstLaunch && !isServiceRunning()) {
+            Log.d(TAG, "Auto-starting service on resume (not first launch)");
+            startFloatingService();
+        } else if (isFirstLaunch) {
+            Log.d(TAG, "First launch, waiting for user to configure content");
+        }
     }
 }

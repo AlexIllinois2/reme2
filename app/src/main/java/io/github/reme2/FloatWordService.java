@@ -36,11 +36,14 @@ public class FloatWordService extends Service {
     private static final String KEY_POS_X = "pos_x";
     private static final String KEY_POS_Y = "pos_y";
     private static final String KEY_ZOOM_SCALE = "zoom_scale";
+    private static final String KEY_AUTO_HIDE_DURATION = "auto_hide_duration"; // 自动隐藏时长(分钟)
+    private static final String KEY_IS_HIDDEN = "is_hidden"; // 是否处于隐藏状态
 
     // 默认值
     private static final String DEFAULT_TEXT = "delve\n翻找；\n探索，\n探究";
     private static final float DEFAULT_SCALE = 1.0f;
     private static final int DEFAULT_Y_POS = 100;
+    private static final int DEFAULT_AUTO_HIDE_DURATION = 30; // 默认30分钟
 
     // 通知渠道
     private static final String CHANNEL_ID = "FloatWordServiceChannel";
@@ -56,11 +59,18 @@ public class FloatWordService extends Service {
     private float currentScale = DEFAULT_SCALE;
     private int savedX = 0;
     private int savedY = DEFAULT_Y_POS;
+    private int autoHideDuration = DEFAULT_AUTO_HIDE_DURATION; // 自动隐藏时长(分钟)
+    private boolean isHidden = false; // 是否处于隐藏状态
     
     // 保活相关
     private android.os.Handler keepAliveHandler;
     private Runnable keepAliveRunnable;
     private static final long KEEP_ALIVE_INTERVAL = 30000; // 30秒心跳
+    
+    // 定时隐藏相关
+    private android.os.Handler hideHandler;
+    private Runnable hideRunnable;
+    private long hideStartTime = 0; // 隐藏开始时间戳
 
     @Override
     public void onCreate() {
@@ -79,6 +89,13 @@ public class FloatWordService extends Service {
         
         // 初始化保活机制
         initKeepAlive();
+        
+        // 如果之前处于隐藏状态，恢复显示
+        if (isHidden) {
+            Log.d(TAG, "Restoring from hidden state");
+            isHidden = false;
+            saveConfig(KEY_IS_HIDDEN, false);
+        }
         
         // 创建悬浮窗
         createFloatingWindow();
@@ -108,11 +125,19 @@ public class FloatWordService extends Service {
                 float newScale = intent.getFloatExtra("scale", DEFAULT_SCALE);
                 updateScale(newScale);
                 Log.d(TAG, "Updated scale from intent: " + newScale);
+            } else if ("toggle_visibility".equals(action)) {
+                // 切换悬浮窗显示/隐藏
+                toggleVisibility();
+                Log.d(TAG, "Toggled visibility from intent");
+            } else if ("set_auto_hide_duration".equals(action)) {
+                int duration = intent.getIntExtra("duration", DEFAULT_AUTO_HIDE_DURATION);
+                setAutoHideDuration(duration);
+                Log.d(TAG, "Set auto hide duration: " + duration + " minutes");
             }
         }
         
         // 如果服务被杀死后重启，重新创建悬浮窗
-        if (floatingView == null) {
+        if (floatingView == null && !isHidden) {
             createFloatingWindow();
         }
         
@@ -127,6 +152,9 @@ public class FloatWordService extends Service {
         // 停止保活机制
         stopKeepAlive();
         
+        // 停止定时隐藏计时器
+        stopAutoHideTimer();
+        
         destroyFloatingWindow();
         super.onDestroy();
     }
@@ -140,8 +168,12 @@ public class FloatWordService extends Service {
         savedX = pref.getInt(KEY_POS_X, 0);
         savedY = pref.getInt(KEY_POS_Y, DEFAULT_Y_POS);
         currentScale = pref.getFloat(KEY_ZOOM_SCALE, DEFAULT_SCALE);
+        autoHideDuration = pref.getInt(KEY_AUTO_HIDE_DURATION, DEFAULT_AUTO_HIDE_DURATION);
+        isHidden = pref.getBoolean(KEY_IS_HIDDEN, false);
+        
         Log.d(TAG, "Loaded config: text=" + currentConfigText.substring(0, Math.min(20, currentConfigText.length())) 
-                + ", pos=(" + savedX + "," + savedY + "), scale=" + currentScale);
+                + ", pos=(" + savedX + "," + savedY + "), scale=" + currentScale
+                + ", autoHideDuration=" + autoHideDuration + ", isHidden=" + isHidden);
     }
 
     /**
@@ -157,6 +189,8 @@ public class FloatWordService extends Service {
             editor.putInt(key, (Integer) value);
         } else if (value instanceof Float) {
             editor.putFloat(key, (Float) value);
+        } else if (value instanceof Boolean) {
+            editor.putBoolean(key, (Boolean) value);
         }
         editor.apply();
     }
@@ -387,6 +421,171 @@ public class FloatWordService extends Service {
         }
     }
     
+    /**
+     * 切换悬浮窗显示/隐藏状态
+     */
+    private void toggleVisibility() {
+        if (isHidden) {
+            // 当前是隐藏状态，恢复显示
+            showFloatingWindow();
+        } else {
+            // 当前是显示状态，开始隐藏
+            hideFloatingWindow();
+        }
+    }
+    
+    /**
+     * 隐藏悬浮窗并启动定时器
+     */
+    private void hideFloatingWindow() {
+        Log.d(TAG, "Hiding floating window for " + autoHideDuration + " minutes");
+        
+        // 保存当前位置
+        if (floatingView != null && windowManager != null) {
+            WindowManager.LayoutParams p = (WindowManager.LayoutParams) floatingView.getLayoutParams();
+            saveConfig(KEY_POS_X, p.x);
+            saveConfig(KEY_POS_Y, p.y);
+            
+            // 移除悬浮窗
+            try {
+                windowManager.removeView(floatingView);
+                floatingView = null;
+                tvFloatingText = null;
+                Log.d(TAG, "Floating window removed for hiding");
+            } catch (Exception e) {
+                Log.e(TAG, "Error removing overlay for hiding", e);
+            }
+        }
+        
+        // 标记为隐藏状态
+        isHidden = true;
+        saveConfig(KEY_IS_HIDDEN, true);
+        
+        // 记录隐藏开始时间
+        hideStartTime = System.currentTimeMillis();
+        
+        // 启动定时器
+        startAutoHideTimer();
+        
+        // 更新通知
+        updateNotificationForHiddenState();
+        
+        Toast.makeText(this, "悬浮窗已隐藏，" + autoHideDuration + "分钟后自动恢复", Toast.LENGTH_SHORT).show();
+    }
+    
+    /**
+     * 恢复显示悬浮窗
+     */
+    private void showFloatingWindow() {
+        Log.d(TAG, "Showing floating window");
+        
+        // 停止定时器
+        stopAutoHideTimer();
+        
+        // 标记为显示状态
+        isHidden = false;
+        saveConfig(KEY_IS_HIDDEN, false);
+        
+        // 重新创建悬浮窗
+        createFloatingWindow();
+        
+        // 更新通知
+        updateNotificationForShownState();
+        
+        Toast.makeText(this, "悬浮窗已恢复显示", Toast.LENGTH_SHORT).show();
+    }
+    
+    /**
+     * 设置自动隐藏时长
+     */
+    public void setAutoHideDuration(int duration) {
+        if (duration <= 0) {
+            Log.w(TAG, "Invalid auto hide duration: " + duration + ", using default");
+            duration = DEFAULT_AUTO_HIDE_DURATION;
+        }
+        
+        this.autoHideDuration = duration;
+        saveConfig(KEY_AUTO_HIDE_DURATION, duration);
+        Log.d(TAG, "Auto hide duration set to: " + duration + " minutes");
+        
+        // 如果当前正在隐藏，重新启动定时器
+        if (isHidden) {
+            stopAutoHideTimer();
+            startAutoHideTimer();
+        }
+    }
+    
+    /**
+     * 启动自动隐藏定时器
+     */
+    private void startAutoHideTimer() {
+        if (hideHandler == null) {
+            hideHandler = new android.os.Handler(android.os.Looper.getMainLooper());
+        }
+        
+        hideRunnable = new Runnable() {
+            @Override
+            public void run() {
+                long elapsedTime = System.currentTimeMillis() - hideStartTime;
+                long expectedTime = autoHideDuration * 60 * 1000L; // 转换为毫秒
+                
+                if (elapsedTime >= expectedTime) {
+                    // 时间到了，恢复显示
+                    Log.d(TAG, "Auto hide timer expired, showing window");
+                    showFloatingWindow();
+                } else {
+                    // 继续等待
+                    long remainingTime = expectedTime - elapsedTime;
+                    Log.d(TAG, "Auto hide timer continuing, remaining: " + (remainingTime / 1000 / 60) + " minutes");
+                    hideHandler.postDelayed(this, Math.min(remainingTime, 60000)); // 最多每分钟检查一次
+                }
+            }
+        };
+        
+        // 立即执行第一次检查
+        hideHandler.post(hideRunnable);
+        Log.d(TAG, "Auto hide timer started for " + autoHideDuration + " minutes");
+    }
+    
+    /**
+     * 停止自动隐藏定时器
+     */
+    private void stopAutoHideTimer() {
+        if (hideHandler != null && hideRunnable != null) {
+            hideHandler.removeCallbacks(hideRunnable);
+            hideHandler = null;
+            hideRunnable = null;
+            Log.d(TAG, "Auto hide timer stopped");
+        }
+    }
+    
+    /**
+     * 更新通知为隐藏状态
+     */
+    private void updateNotificationForHiddenState() {
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager != null) {
+            Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("单词悬浮窗已隐藏")
+                .setContentText(autoHideDuration + "分钟后自动恢复")
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setOngoing(true)
+                .build();
+            manager.notify(NOTIFICATION_ID, notification);
+        }
+    }
+    
+    /**
+     * 更新通知为显示状态
+     */
+    private void updateNotificationForShownState() {
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager != null) {
+            manager.notify(NOTIFICATION_ID, buildNotification());
+        }
+    }
+    
     //region 保活机制
     /**
      * 初始化保活机制
@@ -437,4 +636,5 @@ public class FloatWordService extends Service {
         }
     }
     //endregion
+    
 }

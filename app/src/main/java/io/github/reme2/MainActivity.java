@@ -35,7 +35,7 @@ public class MainActivity extends AppCompatActivity {
 
     // UI Components
     private EditText etConfigText, etAutoHideDuration;
-    private Button btnSaveConfig, btnZoomIn, btnZoomOut, btnOptimize, btnToggleVisibility, btnSetAutoHide;
+    private Button btnSaveConfig, btnZoomIn, btnZoomOut, btnOptimize, btnToggleVisibility;
 
     // 状态数据
     private String currentConfigText = DEFAULT_TEXT;
@@ -96,7 +96,6 @@ public class MainActivity extends AppCompatActivity {
         
         // 新增的UI控件
         etAutoHideDuration = findViewById(R.id.et_auto_hide_duration);
-        btnSetAutoHide = findViewById(R.id.btn_set_auto_hide);
         btnToggleVisibility = findViewById(R.id.btn_toggle_visibility);
         
         // 优化按钮
@@ -124,10 +123,7 @@ public class MainActivity extends AppCompatActivity {
         btnZoomIn.setOnClickListener(v -> zoomIn());
         btnZoomOut.setOnClickListener(v -> zoomOut());
         
-        // 新增的事件监听
-        if (btnSetAutoHide != null) {
-            btnSetAutoHide.setOnClickListener(v -> setAutoHideDuration());
-        }
+        // 隐藏/显示悬浮窗按钮
         if (btnToggleVisibility != null) {
             btnToggleVisibility.setOnClickListener(v -> toggleVisibility());
         }
@@ -419,6 +415,50 @@ public class MainActivity extends AppCompatActivity {
             startFloatingService();
         } else if (isFirstLaunch) {
             Log.d(TAG, "First launch, waiting for user to configure content");
+        }
+    }
+    
+    @Override
+    protected void onPause() {
+        super.onPause();
+        
+        // 应用进入后台时，自动保存可能修改的隐藏时长
+        saveAutoHideDurationIfNeeded();
+    }
+    
+    /**
+     * 如果需要，自动保存隐藏时长
+     */
+    private void saveAutoHideDurationIfNeeded() {
+        try {
+            String durationStr = etAutoHideDuration.getText().toString().trim();
+            if (durationStr.isEmpty()) {
+                return;
+            }
+            
+            int inputDuration = Integer.parseInt(durationStr);
+            if (inputDuration <= 0) {
+                return;
+            }
+            
+            // 如果输入的时长与当前保存的不同,则自动保存
+            if (inputDuration != autoHideDuration) {
+                autoHideDuration = inputDuration;
+                saveData(KEY_AUTO_HIDE_DURATION, inputDuration);
+                
+                // 同时通知服务更新
+                if (isServiceRunning()) {
+                    Intent intent = new Intent(this, FloatWordService.class);
+                    intent.putExtra("action", "set_auto_hide_duration");
+                    intent.putExtra("duration", inputDuration);
+                    startService(intent);
+                }
+                
+                Log.d(TAG, "Auto-saved auto hide duration on pause: " + inputDuration + " minutes");
+            }
+        } catch (NumberFormatException e) {
+            // 忽略无效输入
+            Log.w(TAG, "Invalid number format in auto-hide duration field");
         }
     }
 }

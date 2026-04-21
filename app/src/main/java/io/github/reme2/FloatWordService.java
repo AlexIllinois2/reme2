@@ -317,6 +317,8 @@ public class FloatWordService extends Service {
     private void applyDataToView() {
         if (tvFloatingText != null) {
             tvFloatingText.setText(currentConfigText);
+            // 强制设置文字颜色为白色，避免深色模式下变成黑色
+            tvFloatingText.setTextColor(0xFFFFFFFF); // 纯白色 #FFFFFF
             updateTextSize(tvFloatingText);
         }
     }
@@ -400,6 +402,8 @@ public class FloatWordService extends Service {
         
         if (tvFloatingText != null) {
             tvFloatingText.setText(newText);
+            // 强制设置文字颜色为白色，避免深色模式下变成黑色
+            tvFloatingText.setTextColor(0xFFFFFFFF); // 纯白色 #FFFFFF
         }
         
         // 更新通知内容

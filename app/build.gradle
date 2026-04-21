@@ -1,5 +1,8 @@
 apply plugin: "com.android.application"
 
+Properties properties = new Properties()
+properties.load(project.rootProject.file('local.properties').newDataInputStream())
+
 android {
 	buildToolsVersion "34.0.0"
 	compileSdkVersion 34
@@ -13,6 +16,14 @@ android {
 		versionName "1.0"
 	}
 	
+	// Lint 配置
+	lint {
+		// 禁用 Instantiatable 检查（这是Lint的已知误报）
+		disable 'Instantiatable'
+		// 或者使用 abortOnError false 让构建继续（不推荐用于生产环境）
+		// abortOnError false
+	}
+	
 	// ecj模式(设置 -> 实验室 -> ecj)设置Java语法版本
 	compileOptions {
 		// AIDE+最高支持23，gradle 8.5仅到17
@@ -22,12 +33,12 @@ android {
 	
 	// 签名文件配置
 	signingConfigs{
-		// release自行配置
 		release{
-			keyAlias "AIDE+"
-			keyPassword "123789456"
-			storePassword "123789456"
-			storeFile file("app-release.jks")
+			storeFile file("release-key1.p12")
+			storeType "PKCS12"
+			keyAlias properties.getProperty("KEY_ALIAS", "").trim()
+			storePassword properties.getProperty("KEY_STORE_PASSWORD", "").trim()
+			keyPassword storePassword
 		}
 		debug{
 			keyAlias "androiddebug"

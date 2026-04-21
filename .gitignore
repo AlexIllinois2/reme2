@@ -115,3 +115,5 @@ keystore.properties
 
 # BFG Repo-Cleaner
 bfg.jar
+
+local.properties

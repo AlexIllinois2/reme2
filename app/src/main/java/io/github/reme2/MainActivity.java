@@ -110,6 +110,14 @@ public class MainActivity extends AppCompatActivity {
         
         // 设置自动隐藏时长初始值
         etAutoHideDuration.setText(String.valueOf(autoHideDuration));
+        
+        // 设置隐藏时长输入框焦点变化监听
+        etAutoHideDuration.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                // 失去焦点时保存
+                checkAndSaveAutoHideDuration();
+            }
+        });
     }
 
     /**
@@ -249,6 +257,39 @@ public class MainActivity extends AppCompatActivity {
     }
     
     /**
+     * 计算时长表达式
+     */
+    private int evaluateDurationExpression(String expression) throws NumberFormatException {
+        // 移除所有空格
+        String expr = expression.trim().replaceAll("\\s+", "");
+        
+        // 尝试直接解析为整数
+        try {
+            return Integer.parseInt(expr);
+        } catch (NumberFormatException e) {
+            // 继续处理表达式
+        }
+        
+        // 支持 * 和 x 作为乘法运算符
+        String[] parts;
+        if (expr.contains("*")) {
+            parts = expr.split("\\*");
+        } else if (expr.contains("x")) {
+            parts = expr.split("x");
+        } else {
+            throw new NumberFormatException("Invalid expression: " + expression);
+        }
+        
+        // 计算乘积
+        int result = 1;
+        for (String part : parts) {
+            result *= Integer.parseInt(part.trim());
+        }
+        
+        return result;
+    }
+    
+    /**
      * 设置自动隐藏时长
      */
     private void setAutoHideDuration() {
@@ -259,7 +300,7 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             
-            int duration = Integer.parseInt(durationStr);
+            int duration = evaluateDurationExpression(durationStr);
             if (duration <= 0) {
                 Toast.makeText(this, "时长必须大于0", Toast.LENGTH_SHORT).show();
                 return;
@@ -280,8 +321,8 @@ public class MainActivity extends AppCompatActivity {
             Toast.makeText(this, "已设置自动隐藏时长: " + duration + " 分钟", Toast.LENGTH_SHORT).show();
             Log.d(TAG, "Auto hide duration set to: " + duration + " minutes");
         } catch (NumberFormatException e) {
-            Toast.makeText(this, "请输入有效的数字", Toast.LENGTH_SHORT).show();
-            Log.e(TAG, "Invalid number format", e);
+            Toast.makeText(this, "请输入有效的数字或表达式（如 60 x 3, 60*3）", Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "Invalid duration expression", e);
         }
     }
     
@@ -340,7 +381,7 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             
-            int inputDuration = Integer.parseInt(durationStr);
+            int inputDuration = evaluateDurationExpression(durationStr);
             if (inputDuration <= 0) {
                 return;
             }
@@ -360,7 +401,7 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (NumberFormatException e) {
             // 忽略无效输入
-            Log.w(TAG, "Invalid number format in auto-hide duration field");
+            Log.w(TAG, "Invalid duration expression in auto-hide duration field", e);
         }
     }
     
@@ -436,7 +477,7 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             
-            int inputDuration = Integer.parseInt(durationStr);
+            int inputDuration = evaluateDurationExpression(durationStr);
             if (inputDuration <= 0) {
                 return;
             }
@@ -458,7 +499,7 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (NumberFormatException e) {
             // 忽略无效输入
-            Log.w(TAG, "Invalid number format in auto-hide duration field");
+            Log.w(TAG, "Invalid duration expression in auto-hide duration field", e);
         }
     }
 }

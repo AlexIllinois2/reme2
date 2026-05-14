@@ -38,6 +38,7 @@ public class FloatWordService extends Service {
     private static final String KEY_ZOOM_SCALE = "zoom_scale";
     private static final String KEY_AUTO_HIDE_DURATION = "auto_hide_duration"; // 自动隐藏时长(分钟)
     private static final String KEY_IS_HIDDEN = "is_hidden"; // 是否处于隐藏状态
+    private static final String KEY_NEXT_DISPLAY_TIME = "next_display_time"; // 下一次显示时间戳
 
     // 默认值
     private static final String DEFAULT_TEXT = "delve\n翻找；\n探索，\n探究";
@@ -61,6 +62,7 @@ public class FloatWordService extends Service {
     private int savedY = DEFAULT_Y_POS;
     private int autoHideDuration = DEFAULT_AUTO_HIDE_DURATION; // 自动隐藏时长(分钟)
     private boolean isHidden = false; // 是否处于隐藏状态
+    private long nextDisplayTime = 0; // 下一次显示时间戳
     
     // 保活相关
     private android.os.Handler keepAliveHandler;
@@ -90,15 +92,24 @@ public class FloatWordService extends Service {
         // 初始化保活机制
         initKeepAlive();
         
-        // 如果之前处于隐藏状态，恢复显示
-        if (isHidden) {
-            Log.d(TAG, "Restoring from hidden state");
+        // 检查是否需要继续隐藏
+        long currentTime = System.currentTimeMillis();
+        if (nextDisplayTime > 0 && currentTime < nextDisplayTime) {
+            // 还没到显示时间，保持隐藏状态
+            Log.d(TAG, "Service restarted but next display time not reached, staying hidden for " + 
+                    ((nextDisplayTime - currentTime) / 1000 / 60) + " more minutes");
+            isHidden = true;
+            startAutoHideTimer();
+            updateNotificationForHiddenState();
+        } else {
+            // 到了显示时间或者没有设置，正常显示
+            Log.d(TAG, "Service restarted, showing window normally");
             isHidden = false;
+            nextDisplayTime = 0;
             saveConfig(KEY_IS_HIDDEN, false);
+            saveConfig(KEY_NEXT_DISPLAY_TIME, 0L);
+            createFloatingWindow();
         }
-        
-        // 创建悬浮窗
-        createFloatingWindow();
     }
 
     @Nullable
@@ -136,8 +147,9 @@ public class FloatWordService extends Service {
             }
         }
         
-        // 如果服务被杀死后重启，重新创建悬浮窗
-        if (floatingView == null && !isHidden) {
+        // 检查是否需要显示悬浮窗
+        long currentTime = System.currentTimeMillis();
+        if (floatingView == null && !isHidden && (nextDisplayTime == 0 || currentTime >= nextDisplayTime)) {
             createFloatingWindow();
         }
         
@@ -170,10 +182,12 @@ public class FloatWordService extends Service {
         currentScale = pref.getFloat(KEY_ZOOM_SCALE, DEFAULT_SCALE);
         autoHideDuration = pref.getInt(KEY_AUTO_HIDE_DURATION, DEFAULT_AUTO_HIDE_DURATION);
         isHidden = pref.getBoolean(KEY_IS_HIDDEN, false);
+        nextDisplayTime = pref.getLong(KEY_NEXT_DISPLAY_TIME, 0);
         
         Log.d(TAG, "Loaded config: text=" + currentConfigText.substring(0, Math.min(20, currentConfigText.length())) 
                 + ", pos=(" + savedX + "," + savedY + "), scale=" + currentScale
-                + ", autoHideDuration=" + autoHideDuration + ", isHidden=" + isHidden);
+                + ", autoHideDuration=" + autoHideDuration + ", isHidden=" + isHidden
+                + ", nextDisplayTime=" + nextDisplayTime);
     }
 
     /**
@@ -191,6 +205,8 @@ public class FloatWordService extends Service {
             editor.putFloat(key, (Float) value);
         } else if (value instanceof Boolean) {
             editor.putBoolean(key, (Boolean) value);
+        } else if (value instanceof Long) {
+            editor.putLong(key, (Long) value);
         }
         editor.apply();
     }
@@ -465,8 +481,10 @@ public class FloatWordService extends Service {
         isHidden = true;
         saveConfig(KEY_IS_HIDDEN, true);
         
-        // 记录隐藏开始时间
+        // 计算并保存下一次显示时间
         hideStartTime = System.currentTimeMillis();
+        nextDisplayTime = hideStartTime + autoHideDuration * 60 * 1000L;
+        saveConfig(KEY_NEXT_DISPLAY_TIME, nextDisplayTime);
         
         // 启动定时器
         startAutoHideTimer();
@@ -490,6 +508,10 @@ public class FloatWordService extends Service {
         isHidden = false;
         saveConfig(KEY_IS_HIDDEN, false);
         
+        // 清除下一次显示时间
+        nextDisplayTime = 0;
+        saveConfig(KEY_NEXT_DISPLAY_TIME, 0L);
+        
         // 重新创建悬浮窗
         createFloatingWindow();
         
@@ -512,9 +534,12 @@ public class FloatWordService extends Service {
         saveConfig(KEY_AUTO_HIDE_DURATION, duration);
         Log.d(TAG, "Auto hide duration set to: " + duration + " minutes");
         
-        // 如果当前正在隐藏，重新启动定时器
+        // 如果当前正在隐藏，重新计算下一次显示时间并启动定时器
         if (isHidden) {
             stopAutoHideTimer();
+            hideStartTime = System.currentTimeMillis();
+            nextDisplayTime = hideStartTime + autoHideDuration * 60 * 1000L;
+            saveConfig(KEY_NEXT_DISPLAY_TIME, nextDisplayTime);
             startAutoHideTimer();
         }
     }
@@ -530,18 +555,21 @@ public class FloatWordService extends Service {
         hideRunnable = new Runnable() {
             @Override
             public void run() {
-                long elapsedTime = System.currentTimeMillis() - hideStartTime;
-                long expectedTime = autoHideDuration * 60 * 1000L; // 转换为毫秒
+                long currentTime = System.currentTimeMillis();
                 
-                if (elapsedTime >= expectedTime) {
+                if (nextDisplayTime > 0 && currentTime >= nextDisplayTime) {
                     // 时间到了，恢复显示
                     Log.d(TAG, "Auto hide timer expired, showing window");
                     showFloatingWindow();
-                } else {
+                } else if (nextDisplayTime > 0) {
                     // 继续等待
-                    long remainingTime = expectedTime - elapsedTime;
+                    long remainingTime = nextDisplayTime - currentTime;
                     Log.d(TAG, "Auto hide timer continuing, remaining: " + (remainingTime / 1000 / 60) + " minutes");
                     hideHandler.postDelayed(this, Math.min(remainingTime, 60000)); // 最多每分钟检查一次
+                } else {
+                    // 没有设置下一次显示时间，停止定时器
+                    Log.d(TAG, "No next display time set, stopping auto hide timer");
+                    stopAutoHideTimer();
                 }
             }
         };
